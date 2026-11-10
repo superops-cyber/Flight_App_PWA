@@ -20,18 +20,7 @@ body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:760px;margin:40p
 const CLIENT_ID='4443926095-89c9cuj6lne2ic79m4bgtoak0ud70ui6.apps.googleusercontent.com';
 const DEPLOYMENT_ID='AKfycbzJcdzYQFfb4fTBIP2KgYkaHXzplPf6LJvwbhZ5xuui-TdY3v5GC409f81pZt4L1RhTsg';
 // Scope list copied from the test Apps Script project's Project OAuth Scopes screen.
-const SCOPES=[
- 'https://www.googleapis.com/auth/script.external_request',
- 'https://www.googleapis.com/auth/spreadsheets',
- 'https://www.googleapis.com/auth/script.send_mail',
- 'https://www.googleapis.com/auth/drive',
- 'https://www.googleapis.com/auth/userinfo.email',
- 'https://mail.google.com/',
- 'https://www.googleapis.com/auth/documents',
- 'https://www.googleapis.com/auth/script.container.ui',
- 'https://www.googleapis.com/auth/script.scriptapp',
- 'https://www.googleapis.com/auth/calendar'
-].join(' ');
+const SCOPES = 'openid email profile';
 const output=document.getElementById('result');
 const button=document.getElementById('start');
 function show(value){output.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
