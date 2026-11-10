@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight App — OAuth API Connection Test</title>
+<style>
+body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;color:#192638}h1{font-size:1.5rem}button{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid #456;background:#174ea6;color:white;cursor:pointer}button:disabled{opacity:.5}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f2f5f9;padding:18px;border-radius:8px;min-height:110px}small{color:#566}code{overflow-wrap:anywhere}.warning{background:#fff5dc;padding:12px;border-radius:8px}
+</style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+<h1>Flight App — PWA API Connection Test</h1>
+<p>This test uses your corporate Google account to call the harmless <code>pwaApiConnectionTest()</code> function in the separate Apps Script test deployment. It does not change flight data.</p>
+<p class="warning"><strong>Permission notice:</strong> This copied Apps Script project requests broad permissions, including Gmail, Drive, Sheets, and Calendar. Only proceed if you are authorized to approve these permissions. This test page does not itself read those services; the scopes are requested because they are declared by the copied Apps Script project.</p>
+<p><button id="start" disabled>Loading Google sign-in…</button></p>
+<p><small>Host this file at <code>https://superops-cyber.github.io/Flight_App_PWA/pwa-api-connection-test.html</code>. Opening it as a local file will not work with the configured OAuth JavaScript origin.</small></p>
+<h2>Result</h2><pre id="result">Waiting for sign-in.</pre>
+<script>
+'use strict';
+const CLIENT_ID='4443926095-89c9cuj6lne2ic79m4bgtoak0ud70ui6.apps.googleusercontent.com';
+const DEPLOYMENT_ID='AKfycbwlvnH_oM2n77irOQGpBlpe_ZXkyftxpX36Uz-3OSAd43hNKlYO0owMQJxAs_3CAWD4';
+// Scope list copied from the test Apps Script project's Project OAuth Scopes screen.
+const SCOPES=[
+ 'https://www.googleapis.com/auth/script.external_request',
+ 'https://www.googleapis.com/auth/spreadsheets',
+ 'https://www.googleapis.com/auth/script.send_mail',
+ 'https://www.googleapis.com/auth/drive',
+ 'https://www.googleapis.com/auth/userinfo.email',
+ 'https://mail.google.com/',
+ 'https://www.googleapis.com/auth/documents',
+ 'https://www.googleapis.com/auth/script.container.ui',
+ 'https://www.googleapis.com/auth/script.scriptapp',
+ 'https://www.googleapis.com/auth/calendar'
+].join(' ');
+const output=document.getElementById('result');
+const button=document.getElementById('start');
+function show(value){output.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
+function init(){
+ if(!window.google?.accounts?.oauth2){show('Google Identity Services did not load. Check network access and reload.');return}
+ const tokenClient=google.accounts.oauth2.initTokenClient({
+  client_id:CLIENT_ID,scope:SCOPES,
+  callback:async response=>{
+   if(response.error){show({stage:'oauth',error:response.error,description:response.error_description});return}
+   // Never print or persist access tokens.
+   show('Google authorization returned a token. Calling Apps Script API…');
+   try{
+    const apiResponse=await fetch('https://script.googleapis.com/v1/scripts/'+encodeURIComponent(DEPLOYMENT_ID)+':run',{
+     method:'POST',headers:{Authorization:'Bearer '+response.access_token,'Content-Type':'application/json'},
+     body:JSON.stringify({function:'pwaApiConnectionTest',parameters:[],devMode:false})
+    });
+    const payload=await apiResponse.json();
+    show({httpStatus:apiResponse.status,ok:apiResponse.ok,response:payload});
+   }catch(err){show({stage:'fetch',error:String(err)})}
+  },
+  error_callback:error=>show({stage:'google_sign_in_popup',error:error.type||String(error)})
+ });
+ button.disabled=false;button.textContent='Sign in and test API';
+ button.addEventListener('click',()=>{show('Opening Google authorization…');tokenClient.requestAccessToken({prompt:'consent'});});
+}
+let attempts=0;const wait=setInterval(()=>{attempts++;if(window.google?.accounts?.oauth2){clearInterval(wait);init()}else if(attempts>50){clearInterval(wait);show('Google Identity Services could not load. Check your connection and reload.')}},100);
+</script>
+</body>
+</html>
