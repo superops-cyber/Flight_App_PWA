@@ -12,7 +12,7 @@ body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:760px;margin:40p
 <h1>Flight App — PWA API Connection Test</h1>
 <p>This test uses your corporate Google account to call the harmless <code>pwaApiConnectionTest()</code> function in the separate Apps Script test deployment. It does not change flight data.</p>
 <p class="warning"><strong>Permission notice:</strong> This copied Apps Script project requests broad permissions, including Gmail, Drive, Sheets, and Calendar. Only proceed if you are authorized to approve these permissions. This test page does not itself read those services; the scopes are requested because they are declared by the copied Apps Script project.</p>
-<p><button id="start" disabled>Loading Google sign-in…</button></p>
+<p><button id="start" disabled>Loading Google sign-in…</button> <button id="transfer" disabled>Test full offline package transfer</button> <button id="offline">Verify saved package (works offline)</button></p>
 <p><small>Host this file at <code>https://superops-cyber.github.io/Flight_App_PWA/pwa-api-connection-test.html</code>. Opening it as a local file will not work with the configured OAuth JavaScript origin.</small></p>
 <h2>Result</h2><pre id="result">Waiting for sign-in.</pre>
 <script>
@@ -23,6 +23,16 @@ const DEPLOYMENT_ID='AKfycbyihTfLVzz4tDs8ozU3OskMPl9lrcF--ATvu1x4RSOMB9es68TRl74
 const SCOPES = 'openid email profile';
 const output=document.getElementById('result');
 const button=document.getElementById('start');
+const transferButton=document.getElementById('transfer');
+const offlineButton=document.getElementById('offline');
+let requestedFunction='pwaApiConnectionTest';
+const DB_NAME='flightapp-transfer-test', STORE='packages', KEY='latest';
+function openDb(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,1);request.onupgradeneeded=()=>request.result.createObjectStore(STORE);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
+async function storePackage(data){const db=await openDb();try{await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(data,KEY);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}finally{db.close();}}
+async function readPackage(){const db=await openDb();try{return await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readonly');const req=tx.objectStore(STORE).get(KEY);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}finally{db.close();}}
+async function sha256(text){const bytes=new TextEncoder().encode(text);const digest=await crypto.subtle.digest('SHA-256',bytes);return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+async function verifySaved(){try{const saved=await readPackage();if(!saved){show('No saved package. Run the full transfer test online first.');return;}const json=JSON.stringify(saved.package);const bytes=new TextEncoder().encode(json).length;const digest=await sha256(json);show({offlineRead:true,integrityOk:bytes===saved.bytes&&digest===saved.digest,bytes,expectedBytes:saved.bytes,sha256:digest,missionCount:saved.package.missions?.length,ready:saved.package.completeness?.ready,savedAt:saved.savedAt});}catch(err){show({stage:'offline-read',error:String(err)});}}
+offlineButton.addEventListener('click',verifySaved);
 function show(value){output.textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
 function init(){
  if(!window.google?.accounts?.oauth2){show('Google Identity Services did not load. Check network access and reload.');return}
@@ -31,20 +41,35 @@ function init(){
   callback:async response=>{
    if(response.error){show({stage:'oauth',error:response.error,description:response.error_description});return}
    // Never print or persist access tokens.
-   show('Google authorization returned a token. Calling Apps Script API…');
+   show('Google authorization returned a token. Calling '+requestedFunction+'…');
+   const started=performance.now();
    try{
     const apiResponse=await fetch('https://script.googleapis.com/v1/scripts/'+encodeURIComponent(DEPLOYMENT_ID)+':run',{
      method:'POST',headers:{Authorization:'Bearer '+response.access_token,'Content-Type':'application/json'},
-     body:JSON.stringify({function:'pwaApiConnectionTest',parameters:[],devMode:false})
+     body:JSON.stringify({function:requestedFunction,parameters:[],devMode:false})
     });
     const payload=await apiResponse.json();
-    show({httpStatus:apiResponse.status,ok:apiResponse.ok,response:payload});
+    const elapsedMs=Math.round(performance.now()-started);
+    if(requestedFunction!=='pwaOfflinePackageTransferTest'){show({httpStatus:apiResponse.status,ok:apiResponse.ok,response:payload,elapsedMs});return;}
+    if(!apiResponse.ok||payload.error){show({httpStatus:apiResponse.status,elapsedMs,error:payload.error||payload});return;}
+    const result=payload.response?.result;
+    if(!result?.package){show({stage:'api-result',elapsedMs,error:'API did not return the full package',responseKeys:Object.keys(payload)});return;}
+    const json=JSON.stringify(result.package);
+    const bytes=new TextEncoder().encode(json).length;
+    const digest=await sha256(json);
+    await storePackage({package:result.package,bytes,digest,savedAt:new Date().toISOString()});
+    const saved=await readPackage();
+    const storedJson=JSON.stringify(saved.package);
+    const storedBytes=new TextEncoder().encode(storedJson).length;
+    const storedDigest=await sha256(storedJson);
+    show({httpStatus:apiResponse.status,apiOk:apiResponse.ok,elapsedMs,serverReportedBytes:result.bytes,receivedBytes:bytes,serverByteCountMatches:result.bytes===bytes,sha256:digest,storedBytes,storedIntegrityOk:storedBytes===bytes&&storedDigest===digest,missionCount:result.package.missions?.length,packageReady:result.package.completeness?.ready,generationMs:result.generationMs,note:'Turn off network and click Verify saved package to test offline retrieval.'});
    }catch(err){show({stage:'fetch',error:String(err)})}
   },
   error_callback:error=>show({stage:'google_sign_in_popup',error:error.type||String(error)})
  });
- button.disabled=false;button.textContent='Sign in and test API';
- button.addEventListener('click',()=>{show('Opening Google authorization…');tokenClient.requestAccessToken({prompt:'consent'});});
+ button.disabled=false;button.textContent='Sign in and test API';transferButton.disabled=false;
+ button.addEventListener('click',()=>{requestedFunction='pwaApiConnectionTest';show('Opening Google authorization…');tokenClient.requestAccessToken({prompt:'consent'});});
+ transferButton.addEventListener('click',()=>{requestedFunction='pwaOfflinePackageTransferTest';show('Opening Google authorization for full package transfer…');tokenClient.requestAccessToken({prompt:'consent'});});
 }
 let attempts=0;const wait=setInterval(()=>{attempts++;if(window.google?.accounts?.oauth2){clearInterval(wait);init()}else if(attempts>50){clearInterval(wait);show('Google Identity Services could not load. Check your connection and reload.')}},100);
 </script>
